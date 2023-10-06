@@ -20,7 +20,7 @@ area_frame = gpd.GeoDataFrame(geometry=[Polygon([(c.longitude, c.latitude) for c
 
 
 places = find_places_by_area(AREA_NAME)
-places_points = [Point(place.coordinates.longitude, place.coordinates.latitude) for place in places]
+places_points = [Point(place.location.longitude, place.location.latitude) for place in places]
 places_frame = gpd.GeoDataFrame(geometry=places_points, crs=GPS_CRS)
 
 # Create a grid of points that cover Tel Aviv
@@ -61,17 +61,18 @@ if __name__ == '__main__':
     colormap = plt.get_cmap("PuRd")
 
     # Add heatmap
-    for _, row in grid_frame.iterrows():
-        color = mcolors.to_hex(colormap(norm(row['restaurant_count'])))
-        folium.Rectangle(
-            bounds=[
-                (row.geometry.y + LAT_DEGREES / 2, row.geometry.x + LON_DEGREES / 2),
-                (row.geometry.y - LAT_DEGREES / 2, row.geometry.x - LON_DEGREES / 2),
-            ],
-            location=(row.geometry.y, row.geometry.x),
-            color=color,
-            fill=True,
-            fill_opacity=0.6,
-            weight=0,
-        ).add_to(m)
+    # for _, row in grid_frame.iterrows():
+    #     color = mcolors.to_hex(colormap(norm(row['restaurant_count'])))
+    #     folium.Rectangle(
+    #         bounds=[
+    #             (row.geometry.y + LAT_DEGREES / 2, row.geometry.x + LON_DEGREES / 2),
+    #             (row.geometry.y - LAT_DEGREES / 2, row.geometry.x - LON_DEGREES / 2),
+    #         ],
+    #         location=(row.geometry.y, row.geometry.x),
+    #         color='red',
+    #         fill=True,
+    #         fill_opacity=0.6,
+    #         weight=0,
+    #     ).add_to(m)
+    folium.Polygon(locations=[[(c.latitude, c.longitude) for c in area_coordinates]], color='red', fill=True).add_to(m)
     m.save('heatmap_grid.html')

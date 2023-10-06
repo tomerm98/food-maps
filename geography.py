@@ -1,14 +1,17 @@
 from dataclasses import dataclass
 from typing import List
 
+import requests
 from overpy import Overpass, Node, Result
 
-overpass = Overpass()
 AMENITY_TYPES = ['pub', 'bar', 'cafe', 'restaurant', 'fast_food']
+NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search'
+
+overpass = Overpass()
 
 
 @dataclass
-class Coordinates:
+class Location:
     latitude: float
     longitude: float
 
@@ -17,11 +20,11 @@ class Coordinates:
 class Place:
     name: str
     type: str
-    coordinates: Coordinates
+    location: Location
 
 
-def _get_node_coordinates(node: Node) -> Coordinates:
-    return Coordinates(latitude=node.lat, longitude=node.lon)
+def _get_node_location(node: Node) -> Location:
+    return Location(latitude=node.lat, longitude=node.lon)
 
 
 def _extract_places(result: Result) -> List[Place]:
@@ -29,16 +32,16 @@ def _extract_places(result: Result) -> List[Place]:
         Place(
             name=node.tags['name'],
             type=node.tags['amenity'],
-            coordinates=_get_node_coordinates(node),
+            location=_get_node_location(node),
         )
         for node in result.nodes
         if 'name' in node.tags
     ]
 
 
-def find_nearby_places(coordinates: Coordinates, radius: int) -> List[Place]:
+def find_nearby_places(location: Location, radius: int) -> List[Place]:
     node_filters = '\n'.join(
-        f'node(around:{radius},{coordinates.latitude},{coordinates.longitude})["amenity"="{amenity_type}"];'
+        f'node(around:{radius},{location.latitude},{location.longitude})["amenity"="{amenity_type}"];'
         for amenity_type in AMENITY_TYPES
     )
     query = f"""
@@ -67,16 +70,13 @@ def find_places_by_area(name: str) -> List[Place]:
     return _extract_places(overpass.query(query))
 
 
-def get_area_coordinates(name: str) -> List[Coordinates]:
-    query = f"""
-    [out:json];
-    relation[name="{name}"][type="boundary"];
-    (._;>;);
-    out body;
-    """
-    result = overpass.query(query)
-    return [
-        _get_node_coordinates(node)
-        for way in result.ways
-        for node in way.nodes
-    ]
+def get_address_location(address: str) -> Location:
+    response = requests.get(NOMINATIM_URL, params={'q': address, 'format': 'json'})
+    data = response.json()[0]
+    return Location(latitude=data['lat'], longitude=data['lon'])
+
+
+def get_area_polygon(name: str) -> List[Location]:
+    response = requests.get(NOMINATIM_URL, params={'q': name, 'format': 'json', 'polygon_geojson': 1})
+    data = response.json()[0]['geojson']['coordinates'][0]
+    return [Location(latitude=lat, longitude=lon) for lon, lat in data]
