@@ -1,10 +1,10 @@
 from dataclasses import dataclass
-from typing import List
+from typing import List, Union
 
 import requests
-from overpy import Overpass, Node, Result
+from overpy import Overpass, Node, Result, Way, Element
 
-AMENITY_TYPES = ['pub', 'bar', 'cafe', 'restaurant', 'fast_food']
+AMENITY_FILTER = '["amenity"~"cafe|restaurant|bar|pub|fast_food"]'
 NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search'
 
 overpass = Overpass()
@@ -23,49 +23,46 @@ class Place:
     location: Location
 
 
-def _get_node_location(node: Node) -> Location:
-    return Location(latitude=node.lat, longitude=node.lon)
+def _get_element_location(element: Element) -> Location:
+    if isinstance(element, Way):
+        return Location(latitude=element.center_lat, longitude=element.center_lon)
+    if isinstance(element, Node):
+        return Location(latitude=element.lat, longitude=element.lon)
+    raise ValueError(f'Unsupported element type {type(element)}')
 
 
 def _extract_places(result: Result) -> List[Place]:
+    elements = result.nodes + result.ways
     return [
         Place(
-            name=node.tags['name'],
-            type=node.tags['amenity'],
-            location=_get_node_location(node),
+            name=element.tags['name'],
+            type=element.tags['amenity'],
+            location=_get_element_location(element),
         )
-        for node in result.nodes
-        if 'name' in node.tags
+        for element in elements
+        if 'name' in element.tags
     ]
 
 
 def find_nearby_places(location: Location, radius: int) -> List[Place]:
-    node_filters = '\n'.join(
-        f'node(around:{radius},{location.latitude},{location.longitude})["amenity"="{amenity_type}"];'
-        for amenity_type in AMENITY_TYPES
-    )
     query = f"""
     [out:json];
     (
-       {node_filters}
+       nw(around:{radius},{location.latitude},{location.longitude}){AMENITY_FILTER};
     );
-    out body;
+    out body center;
     """
     return _extract_places(overpass.query(query))
 
 
 def find_places_by_area(name: str) -> List[Place]:
-    node_filters = '\n'.join(
-        f'node(area.searchArea)["amenity"="{amenity_type}"];'
-        for amenity_type in AMENITY_TYPES
-    )
     query = f"""
     [out:json];
     area[name="{name}"]->.searchArea;
     (
-       {node_filters}
+       nw(area.searchArea){AMENITY_FILTER};
     );
-    out body;
+    out body center;
     """
     return _extract_places(overpass.query(query))
 
