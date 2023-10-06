@@ -2,7 +2,10 @@ from dataclasses import dataclass
 from typing import List, Union
 
 import requests
+from enum import IntEnum
 from overpy import Overpass, Node, Result, Way, Element
+from geopy import Point
+from geopy.distance import great_circle
 
 AMENITY_FILTER = '["amenity"~"cafe|restaurant|bar|pub|fast_food"]'
 NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search'
@@ -11,23 +14,28 @@ overpass = Overpass()
 
 
 @dataclass
-class Location:
-    latitude: float
-    longitude: float
-
-
-@dataclass
 class Place:
     name: str
     type: str
-    location: Location
+    location: Point
 
 
-def _get_element_location(element: Element) -> Location:
+class Direction(IntEnum):
+    NORTH = 0
+    EAST = 90
+    SOUTH = 180
+    WEST = 270
+    NORTHEAST = 45
+    SOUTHEAST = 135
+    SOUTHWEST = 225
+    NORTHWEST = 315
+
+
+def _get_element_location(element: Element) -> Point:
     if isinstance(element, Way):
-        return Location(latitude=element.center_lat, longitude=element.center_lon)
+        return Point(latitude=element.center_lat, longitude=element.center_lon)
     if isinstance(element, Node):
-        return Location(latitude=element.lat, longitude=element.lon)
+        return Point(latitude=element.lat, longitude=element.lon)
     raise ValueError(f'Unsupported element type {type(element)}')
 
 
@@ -44,7 +52,7 @@ def _extract_places(result: Result) -> List[Place]:
     ]
 
 
-def find_nearby_places(location: Location, radius: int) -> List[Place]:
+def find_nearby_places(location: Point, radius: int) -> List[Place]:
     query = f"""
     [out:json];
     (
@@ -67,13 +75,17 @@ def find_places_by_area(name: str) -> List[Place]:
     return _extract_places(overpass.query(query))
 
 
-def get_address_location(address: str) -> Location:
+def get_address_location(address: str) -> Point:
     response = requests.get(NOMINATIM_URL, params={'q': address, 'format': 'json'})
     data = response.json()[0]
-    return Location(latitude=data['lat'], longitude=data['lon'])
+    return Point(latitude=data['lat'], longitude=data['lon'])
 
 
-def get_area_polygon(name: str) -> List[Location]:
+def get_area_borders(name: str) -> List[Point]:
     response = requests.get(NOMINATIM_URL, params={'q': name, 'format': 'json', 'polygon_geojson': 1})
     data = response.json()[0]['geojson']['coordinates'][0]
-    return [Location(latitude=lat, longitude=lon) for lon, lat in data]
+    return [Point(latitude=lat, longitude=lon) for lon, lat in data]
+
+
+def move_point(point: Point, meters: float, direction: int) -> Point:
+    return great_circle(meters / 1000).destination(point, direction)
